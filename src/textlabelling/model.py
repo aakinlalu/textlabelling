@@ -73,14 +73,15 @@ class Model:
                             labels.append(ent.label_)
                             writer.writerow([row[0], row[1], row[2], intents, labels])
 
-    def write_to_redshift(self, df: pd.DataFrame):
+    def write_to_redshift(self, df: pd.DataFrame, configurl:str):
         """
 
         :param df:
         :return:
         """
         nlp = self.load_model
-        jdbcUrl = "jdbc:postgresql://*********"
+        #jdbcUrl = "jdbc:postgresql://*********"
+        jdbcUrl = configurl
         data = []
         for index, row in df.iterrows():
             if type(row[1]) == str:
