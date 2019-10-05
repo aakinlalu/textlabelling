@@ -1,135 +1,94 @@
-import pandas as pd
-import csv
-from dataclasses import dataclass
-from typing import Generator
-
 from pathlib import Path
-import csv
+import re
+
+import psycopg2
 
 import spacy
-from spacy.lang.en import English
-from spacy.util import minibatch, compounding
-from spacy.util import decaying
+import pandas as pd
 
-from pyspark.sql.types import *
-from pyspark.sql.functions import *
+from spacy.tokenizer import Tokenizer
+from spacy.lemmatizer import Lemmatizer
+from spacy.lang.en import English, LEMMA_INDEX, LEMMA_EXC, LEMMA_RULES
+from nltk.stem import  SnowballStemmer
+
+from src.textlabelling.Dbconnect import Connect
 
 
-class Model:
-    def __init__(self, model_dir: str):
-        """
-        :param model_dir:
-        """
-        self.model_dir = model_dir
+stammer = SnowballStemmer('english')
+nlp = English()
+tokenizer = Tokenizer(nlp.vocab)
+lemmatizer = Lemmatizer(LEMMA_INDEX, LEMMA_EXC, LEMMA_RULES)
 
-    @property
+def apply_stem(sent):
+    try:
+        return " ".join([stammer.stem(str(word)) for word in tokenizer(sent) if len(word)>1])
+    
+    except Exception as e:
+        return e
+
+def apply_lemmas(sent):
+    try:
+        return " ".join([lemmatizer(lemmatizer(str(word), "NOUN")[0],"VERB")[0] for word in tokenizer(sent) if len(str(word))>1])
+    
+    except Exception as e:
+        return e
+   
+
+
+class Model(Connect):
+
+    def __init__(self, output_dir: str, template, config_path, db_system):
+        self.output_dir = output_dir
+        super().__init__(template, config_path, db_system)
+
     def load_model(self):
-        """
-
-        :return:
-        """
-        print("Loading from", self.model_dir)
-        nlp = spacy.load(self.model_dir)
+        print("Loading from", self.output_dir)
+        nlp = spacy.load(self.output_dir)
         return nlp
 
-    def write_result_csv(self, DATA: list, filename: str) -> str:
-        """
-
-        :param DATA:
-        :param filename:
-        """
-        nlp = self.load_model
-        with open(filename, 'w') as f:
-            writer = csv.writer(f)
-            writer.writerow(['text', 'intents', 'classes'])
-            for text in DATA:
-                intents = []
-                labels = []
-                doc = nlp(text)
-                for ent in doc.ents:
-                    intents.append(ent.text)
-                    labels.append(ent.label_)
-                    writer.writerow([text, intents, labels])
-        print(f'{filename} has been created')
-
-    def write_df_csv(self, df: pd.DataFrame, filename: str) -> str:
-        """
-
-        :param df:
-        :param filename:
-        """
-        nlp = self.load_model
-        with open(filename, 'w') as f:
-            writer = csv.writer(f)
-            writer.writerow(['created_date', 'nps_vervatism', 'nps_score', 'intents', 'classes'])
-            for index, row in df.iterrows():
-                intents = []
-                labels = []
-                if type(row[1]) == str:
-                    if len(row[1]) > 1:
-                        doc = nlp(row[1])
-                        for ent in doc.ents:
-                            intents.append(ent.text)
-                            labels.append(ent.label_)
-                            writer.writerow([row[0], row[1], row[2], intents, labels])
-
-    def write_to_redshift(self, df: pd.DataFrame):
-        """
-
-        :param df:
-        :return:
-        """
-        nlp = self.load_model
-        jdbcUrl = "jdbc:postgresql://redshift-prd.insights.ext.national.com.au:8439/prd_insights?user=p759615&password=BAYO!(55itech"
-        data = []
-        for index, row in df.iterrows():
-            if type(row[1]) == str:
-                if len(row[1]) > 1:
-                    doc = nlp(row[1])
-                    for ent in doc.ents:
-                        if len(ent.text) > 1:
-                            row_list = [row[0].to_pydatetime().date(), row[1], row[2], row[3], ent.text, ent.label_]
-                            data.append(row_list)
+    
+    
+    def model_to_data(self):
         try:
-            if len(data) > 1:
-                schema = StructType([
-                    StructField('created_date', DateType(), True),
-                    StructField('nps_verbatim', StringType(), True),
-                    StructField('nps_score', IntegerType(), True),
-                    StructField('feature_intents', StringType(), True),
-                    StructField('feature_category', StringType(), True)
-                ])
-
-                df = spark.createDataFrame(data, schema=schema)
-
-                df.write.format('jdbc') \
-                    .mode('append') \
-                    .option('url', jdbcUrl) \
-                    .option('dbtable', 'public.nps_mobile_app') \
-                    .save()
-            else:
-                raise Exception('There is no data to write to redshift')
-
-        except Exception as e:
-            return e
-
-    def print_result_console(self, df: pd.DataFrame) -> str:
-        """
-
-        :param df:
-        """
-        nlp = self.load_model
-        for index, row in df.iterrows():
-            intents = []
-            labels = []
-            if type(row[1]) == str:
-                if len(row[1]) > 1:
-                    doc = nlp(row[1])
+            nlp = self.load_model()
+            df = super().dbconnector()
+            data = []
+            for index, row in df.iterrows():
+                if len(row[2]) > 2 and type(row[2]) == str:
+                    doc = nlp(row[2].lower())
                     for ent in doc.ents:
-                        intents.append(ent.text)
-                        labels.append(ent.label_)
-                        print(f'NPS_Score: {row[2]}')
-                        print(f'NPS_verbatism:{row[1]}')
-                        print('intent:', intents)
-                        print('entities:', labels)
-                        print('')
+                        if len(ent.text) > 2:
+                            row_list = (row[0], row[1], row[3], apply_lemmas(ent.text), ent.label_)
+                            #print(row_list)
+                            data.append(row_list)
+            return data
+        except Exception as e:
+            print(e)
+                            
+                            
+    
+    def insert_to_redshift(self):
+        """ insert multiple vendors into the vendors table  """
+        sql = "INSERT INTO public.nps_mobile_app(created_date, reference_ticket,nps_score,feature_intents,feature_category) VALUES(%s,%s,%s,%s,%s)"
+        #conn =super().generate_connect()
+        #conn = psycopg2.connect(dbname=dbname, host=host, port=int(port), user=user, password=password)
+        #data = self.model_to_data()
+        try:
+            data = self.model_to_data()
+            conn =super().generate_connect()
+            # create a new cursor
+            cur = conn.cursor()
+            # execute the INSERT statement
+            cur.executemany(sql,data)
+            # commit the changes to the database
+            conn.commit()
+            # close communication with the database
+            cur.close()
+        except (Exception, psycopg2.DatabaseError) as error:
+            print(error)
+        finally:
+            if conn is not None:
+                conn.close()   
+
+        
+
