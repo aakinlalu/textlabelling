@@ -80,7 +80,7 @@ class Model:
         :return:
         """
         nlp = self.load_model
-        jdbcUrl = "jdbc:postgresql://redshift-prd.insights.ext.national.com.au:8439/prd_insights?user=p759615&password=BAYO!(55itech"
+        jdbcUrl = "jdbc:postgresql://*********"
         data = []
         for index, row in df.iterrows():
             if type(row[1]) == str:
