@@ -106,7 +106,7 @@ class Model:
                 df.write.format('jdbc') \
                     .mode('append') \
                     .option('url', jdbcUrl) \
-                    .option('dbtable', 'public.nps_mobile_app') \
+                    .option('dbtable', 'table') \
                     .save()
             else:
                 raise Exception('There is no data to write to redshift')
@@ -129,8 +129,8 @@ class Model:
                     for ent in doc.ents:
                         intents.append(ent.text)
                         labels.append(ent.label_)
-                        print(f'NPS_Score: {row[2]}')
-                        print(f'NPS_verbatism:{row[1]}')
+                        print(f'_Score: {row[2]}')
+                        print(f'_verbatism:{row[1]}')
                         print('intent:', intents)
                         print('entities:', labels)
                         print('')
