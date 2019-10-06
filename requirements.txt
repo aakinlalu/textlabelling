@@ -11,7 +11,6 @@
 # Add your pinned requirements so that they can be easily installed with:
 # pip install -r requirements.txt
 # Remember to also add them in setup.cfg but unpinned.
-# Example:
-# numpy==1.13.3
-# scipy==1.0
-
+spacy==2.0.18
+pandas==0.24.1
+bokeh==1.0.4
